@@ -2,6 +2,9 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Polygon(Base):

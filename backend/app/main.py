@@ -1,30 +1,42 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import logging
 
 from app.database import get_db, init_db
 from app import crud, schemas
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting up application...")
+    init_db()
+    yield
+    # Shutdown
+    logger.info("Shutting down application...")
+
+
 app = FastAPI(
     title="Polygon Editor API",
     description="API для сохранения и управления многоугольниками",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS для фронтенда
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=["*"],  # В продакшене укажите конкретные домены
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup():
-    init_db()
 
 
 # ============ Polygon Endpoints ============
