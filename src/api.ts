@@ -1,6 +1,25 @@
 import { Polygon, Point } from './types';
 
-const API_BASE = 'http://localhost:8000/api';
+// Динамическое определение API URL
+// Для production используем Render, для localhost - локальный сервер
+const API_URL = (() => {
+  // Проверяем переменную окружения Vite
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Если приложение запущено на Render/Vercel, используем Render API
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8000/api';
+  }
+  
+  // Production: используем Render API
+  // Замените на ваш реальный URL бэкенда
+  return 'https://polygon-editor-api.onrender.com/api';
+})();
+
+const API_BASE = API_URL;
 
 // ============ Polygon API ============
 
@@ -123,9 +142,13 @@ export async function sendToBack(polygonId: string): Promise<void> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE.replace('/api', '')}/health`);
+    const baseUrl = API_BASE.replace('/api', '');
+    console.log('Checking API health at:', baseUrl);
+    const res = await fetch(`${baseUrl}/health`);
+    console.log('Health check response:', res.status);
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.error('Health check failed:', err);
     return false;
   }
 }
@@ -133,11 +156,22 @@ export async function checkHealth(): Promise<boolean> {
 // ============ Visitor Tracking ============
 
 export async function trackVisit(): Promise<void> {
-  const res = await fetch(`${API_BASE}/visitors/track`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) throw new Error('Failed to track visit');
+  try {
+    console.log('Tracking visit at:', `${API_BASE}/visitors/track`);
+    const res = await fetch(`${API_BASE}/visitors/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    console.log('Track visit response:', res.status);
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('Track visit error:', errorText);
+      throw new Error(`Failed to track visit: ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Track visit exception:', err);
+    throw err;
+  }
 }
 
 export interface Visitor {

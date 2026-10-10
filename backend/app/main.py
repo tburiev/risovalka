@@ -65,8 +65,8 @@ logger.info("Adding CORS middleware...")
 # CORS для фронтенда
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене укажите конкретные домены
-    allow_credentials=True,
+    allow_origins=["*"],  # Разрешаем все домены
+    allow_credentials=False,  # Не совместимо с allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
