@@ -15,7 +15,6 @@ const API_URL = (() => {
   }
   
   // Production: используем Render API
-  // Замените на ваш реальный URL бэкенда
   return 'https://risovalka-7pnh.onrender.com/api';
 })();
 
