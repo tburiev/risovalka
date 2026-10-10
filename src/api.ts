@@ -16,10 +16,11 @@ const API_URL = (() => {
   
   // Production: используем Render API
   // Замените на ваш реальный URL бэкенда
-  return 'https://polygon-editor-api.onrender.com/api';
+  return 'https://risovalka-7pnh.onrender.com/api';
 })();
 
 const API_BASE = API_URL;
+const API_BASE = 'https://risovalka-7pnh.onrender.com/api';
 
 // ============ Polygon API ============
 
