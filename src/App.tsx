@@ -291,7 +291,8 @@ export default function App() {
 
   // Zoom handlers
   const handleZoom = useCallback((delta: number) => {
-    const factor = delta > 0 ? 1.1 : 0.9;
+    // Инвертируем: колёсико вверх (delta < 0) = приближение (увеличение)
+    const factor = delta < 0 ? 1.1 : 0.9;
     const newZoom = Math.max(0.1, Math.min(10, zoom * factor));
     
     const centerX = viewBox.x + viewBox.w / 2;
