@@ -6,12 +6,19 @@ import logging
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Поддержка обоих форматов URL (postgresql:// и postgresql+psycopg2://)
+# Поддержка обоих форматов URL и явное указание драйвера psycopg2
 DATABASE_URL = settings.database_url
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-logger.info(f"Connecting to database...")
+# Заменяем postgres:// на postgresql+psycopg2://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
+    # Если уже postgresql://, добавляем +psycopg2
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+logger.info(f"Connecting to database with driver: psycopg2")
+logger.info(f"Database URL: {DATABASE_URL[:60]}...")
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
