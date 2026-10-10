@@ -142,12 +142,9 @@ export async function sendToBack(polygonId: string): Promise<void> {
 export async function checkHealth(): Promise<boolean> {
   try {
     const baseUrl = API_BASE.replace('/api', '');
-    console.log('Checking API health at:', baseUrl);
     const res = await fetch(`${baseUrl}/health`);
-    console.log('Health check response:', res.status);
     return res.ok;
-  } catch (err) {
-    console.error('Health check failed:', err);
+  } catch {
     return false;
   }
 }
@@ -156,20 +153,12 @@ export async function checkHealth(): Promise<boolean> {
 
 export async function trackVisit(): Promise<void> {
   try {
-    console.log('Tracking visit at:', `${API_BASE}/visitors/track`);
-    const res = await fetch(`${API_BASE}/visitors/track`, {
+    await fetch(`${API_BASE}/visitors/track`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-    console.log('Track visit response:', res.status);
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('Track visit error:', errorText);
-      throw new Error(`Failed to track visit: ${res.status}`);
-    }
-  } catch (err) {
-    console.error('Track visit exception:', err);
-    throw err;
+  } catch {
+    // Игнорируем ошибки трекинга визитов
   }
 }
 

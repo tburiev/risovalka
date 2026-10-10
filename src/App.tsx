@@ -47,14 +47,17 @@ export default function App() {
     if (apiAvailable) {
       api.fetchPolygons()
         .then(setPolygons)
-        .catch(err => console.error('Failed to load polygons:', err));
+        .catch(() => {
+          // Игнорируем ошибки загрузки
+        });
     }
   }, [apiAvailable]);
 
-  // Track visit
+  // Track visit (fire and forget)
   useEffect(() => {
     if (apiAvailable) {
-      api.trackVisit().catch(err => console.error('Failed to track visit:', err));
+      // Не ждём результат, чтобы не блокировать загрузку
+      api.trackVisit();
     }
   }, [apiAvailable]);
 
@@ -98,39 +101,51 @@ export default function App() {
     };
   }, [viewBox]);
 
-  // Sync to backend
-  const syncToBackend = useCallback(async (updatedPolygons: Polygon[]) => {
+  // Debounced sync to backend
+  const syncTimeoutRef = useRef<number | null>(null);
+  const syncToBackend = useCallback((updatedPolygons: Polygon[]) => {
     if (!apiAvailable) return;
-    setSaving(true);
-    try {
-      const existing = await api.fetchPolygons();
-      const existingIds = new Set(existing.map(p => p.id));
-      const newIds = new Set(updatedPolygons.map(p => p.id));
-
-      for (const p of existing) {
-        if (!newIds.has(p.id)) {
-          await api.deletePolygon(p.id).catch(() => {});
-        }
-      }
-
-      for (const p of updatedPolygons) {
-        if (existingIds.has(p.id)) {
-          await api.updatePolygon(p.id, {
-            fill: p.fill,
-            stroke: p.stroke,
-            strokeWidth: p.strokeWidth,
-            opacity: p.opacity,
-          }).catch(() => {});
-          await api.replacePoints(p.id, p.points).catch(() => {});
-        } else {
-          await api.createPolygon(p).catch(() => {});
-        }
-      }
-    } catch (err) {
-      console.error('Sync error:', err);
-    } finally {
-      setSaving(false);
+    
+    // Очищаем предыдущий таймер
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
     }
+    
+    // Устанавливаем новый таймер (debounce 1 секунда)
+    syncTimeoutRef.current = window.setTimeout(async () => {
+      setSaving(true);
+      try {
+        const existing = await api.fetchPolygons();
+        const existingIds = new Set(existing.map(p => p.id));
+        const newIds = new Set(updatedPolygons.map(p => p.id));
+
+        // Удаляем лишние
+        for (const p of existing) {
+          if (!newIds.has(p.id)) {
+            await api.deletePolygon(p.id).catch(() => {});
+          }
+        }
+
+        // Создаём или обновляем
+        for (const p of updatedPolygons) {
+          if (existingIds.has(p.id)) {
+            await api.updatePolygon(p.id, {
+              fill: p.fill,
+              stroke: p.stroke,
+              strokeWidth: p.strokeWidth,
+              opacity: p.opacity,
+            }).catch(() => {});
+            await api.replacePoints(p.id, p.points).catch(() => {});
+          } else {
+            await api.createPolygon(p).catch(() => {});
+          }
+        }
+      } catch {
+        // Игнорируем ошибки синхронизации
+      } finally {
+        setSaving(false);
+      }
+    }, 1000);
   }, [apiAvailable]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
@@ -295,7 +310,7 @@ export default function App() {
   }, [zoom, viewBox]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+    // Убираем preventDefault чтобы избежать ошибки passive event listener
     handleZoom(e.deltaY);
   }, [handleZoom]);
 
