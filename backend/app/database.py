@@ -4,46 +4,71 @@ from sqlalchemy.pool import QueuePool
 from app.config import get_settings
 import logging
 import socket
+import re
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Поддержка обоих форматов URL и использование psycopg (v3)
-DATABASE_URL = settings.database_url
 
-# Нормализуем URL: postgres:// → postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+def resolve_to_ipv4(hostname: str) -> str:
+    """Резолвит hostname в IPv4 адрес для обхода проблемы IPv6 на Render"""
+    try:
+        # Форсируем IPv4 через family=AF_INET
+        results = socket.getaddrinfo(hostname, 5432, socket.AF_INET, socket.SOCK_STREAM)
+        if results:
+            ipv4 = results[0][4][0]
+            logger.info(f"Resolved {hostname} -> {ipv4} (IPv4)")
+            return ipv4
+    except Exception as e:
+        logger.warning(f"Failed to resolve {hostname} to IPv4: {e}")
+    
+    return hostname
 
-# Убираем +psycopg2 если есть (мы используем psycopg v3)
-if "+psycopg2" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("+psycopg2", "")
 
-# Добавляем sslmode=require для Supabase
-if "?" not in DATABASE_URL:
-    DATABASE_URL += "?sslmode=require"
-elif "sslmode" not in DATABASE_URL:
-    DATABASE_URL += "&sslmode=require"
+def fix_database_url(url: str) -> str:
+    """
+    Нормализует DATABASE_URL:
+    1. postgres:// -> postgresql+psycopg2://
+    2. Резолвит hostname в IPv4
+    3. Добавляет sslmode=require
+    """
+    # Нормализуем схему
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
+    # Извлекаем hostname из URL
+    # Формат: postgresql+psycopg2://user:pass@HOST:port/dbname?params
+    match = re.match(r'(postgresql\+psycopg2://[^@]+@)([^:/]+)(:\d+)?(/[^?]*)?(\?.*)?', url)
+    if match:
+        prefix = match.group(1)      # postgresql+psycopg2://user:pass@
+        hostname = match.group(2)    # db.xxx.supabase.co
+        port = match.group(3) or ""  # :5432
+        dbname = match.group(4) or ""  # /postgres
+        params = match.group(5) or ""  # ?sslmode=require
+        
+        # Резолвим hostname в IPv4
+        ipv4 = resolve_to_ipv4(hostname)
+        
+        # Добавляем sslmode если нет
+        if "sslmode" not in params:
+            if params:
+                params += "&sslmode=require"
+            else:
+                params = "?sslmode=require"
+        
+        url = f"{prefix}{ipv4}{port}{dbname}{params}"
+        logger.info(f"Final DATABASE_URL: {url[:60]}...")
+    
+    return url
 
-logger.info(f"Connecting to database with driver: psycopg (v3)")
+
+# Получаем и нормализуем URL
+DATABASE_URL = fix_database_url(settings.database_url)
+
+logger.info(f"Connecting to database with driver: psycopg2")
 logger.info(f"Database URL: {DATABASE_URL[:60]}...")
-
-
-def force_ipv4_connection():
-    """Обёртка для форсирования IPv4 при подключении к БД"""
-    _original_getaddrinfo = socket.getaddrinfo
-    
-    def _ipv4_only_getaddrinfo(*args, **kwargs):
-        # Форсируем IPv4 (AF_INET) вместо IPv6 (AF_INET6)
-        results = _original_getaddrinfo(*args, **kwargs)
-        return [r for r in results if r[0] == socket.AF_INET] or results
-    
-    socket.getaddrinfo = _ipv4_only_getaddrinfo
-
-
-# Применяем форсирование IPv4
-force_ipv4_connection()
-logger.info("IPv4 forced for database connections")
 
 # Создаём engine
 engine = create_engine(
@@ -73,9 +98,7 @@ def get_db():
 def init_db():
     """Проверка подключения к БД (таблицы уже созданы в Supabase)"""
     try:
-        # Проверяем подключение
         with engine.connect() as conn:
-            # Простой запрос для проверки
             result = conn.execute(text("SELECT 1"))
             logger.info("Database connection test: OK")
             
@@ -83,7 +106,6 @@ def init_db():
             tables = inspector.get_table_names()
             logger.info(f"Connected to database. Tables: {tables}")
             
-            # Проверяем наличие нужных таблиц
             required_tables = ['polygons', 'points']
             missing = [t for t in required_tables if t not in tables]
             if missing:
