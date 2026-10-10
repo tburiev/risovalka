@@ -2,7 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Polygon, Point, Tool } from './types';
 import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
-import ColorPicker from './components/ColorPicker';
+import PolygonTable from './components/PolygonTable';
+import StatsModal from './components/StatsModal';
+import * as api from './api';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 11);
@@ -12,7 +16,6 @@ const DEFAULT_COLORS = [
   '#FF0000', '#FF4500', '#FF8C00', '#FFD700', '#FFFF00', '#ADFF2F',
   '#00FF00', '#00CED1', '#0000FF', '#4B0082', '#8B00FF', '#FF00FF',
   '#FF69B4', '#FFFFFF', '#808080', '#000000', '#8B4513', '#006400',
-  '#191970', '#800080', '#2F4F4F', '#B22222', '#4682B4', '#DAA520',
 ];
 
 export default function App() {
@@ -23,10 +26,35 @@ export default function App() {
   const [currentColor, setCurrentColor] = useState<string>('#4682B4');
   const [currentOpacity, setCurrentOpacity] = useState<number>(0.7);
   const [showColorPicker, setShowColorPicker] = useState<boolean>(false);
+  const [showStats, setShowStats] = useState<boolean>(false);
+  const [showTable, setShowTable] = useState<boolean>(true);
   const [draggingPoint, setDraggingPoint] = useState<{ polygonId: string; pointIndex: number } | null>(null);
+  const [apiAvailable, setApiAvailable] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const selectedPolygon = polygons.find(p => p.id === selectedId) || null;
+
+  // Проверка доступности API
+  useEffect(() => {
+    api.checkHealth().then(setApiAvailable);
+  }, []);
+
+  // Загрузка фигур из БД при старте
+  useEffect(() => {
+    if (apiAvailable) {
+      api.fetchPolygons()
+        .then(setPolygons)
+        .catch(err => console.error('Failed to load polygons:', err));
+    }
+  }, [apiAvailable]);
+
+  // Фиксация визита
+  useEffect(() => {
+    if (apiAvailable) {
+      api.trackVisit().catch(err => console.error('Failed to track visit:', err));
+    }
+  }, [apiAvailable]);
 
   const getSvgPoint = useCallback((e: React.MouseEvent): Point => {
     const svg = svgRef.current;
@@ -38,31 +66,72 @@ export default function App() {
     };
   }, []);
 
+  // Сохранение в БД
+  const syncToBackend = useCallback(async (updatedPolygons: Polygon[]) => {
+    if (!apiAvailable) return;
+    setSaving(true);
+    try {
+      // Простая стратегия: синхронизируем все фигуры
+      const existing = await api.fetchPolygons();
+      const existingIds = new Set(existing.map(p => p.id));
+      const newIds = new Set(updatedPolygons.map(p => p.id));
+
+      // Удаляем фигуры, которых больше нет
+      for (const p of existing) {
+        if (!newIds.has(p.id)) {
+          await api.deletePolygon(p.id).catch(() => {});
+        }
+      }
+
+      // Создаём или обновляем
+      for (const p of updatedPolygons) {
+        if (existingIds.has(p.id)) {
+          await api.updatePolygon(p.id, {
+            fill: p.fill,
+            stroke: p.stroke,
+            strokeWidth: p.strokeWidth,
+            opacity: p.opacity,
+          }).catch(() => {});
+          await api.replacePoints(p.id, p.points).catch(() => {});
+        } else {
+          await api.createPolygon(p).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('Sync error:', err);
+    } finally {
+      setSaving(false);
+    }
+  }, [apiAvailable]);
+
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     if (tool === 'draw') {
       const point = getSvgPoint(e);
       setCurrentPoints(prev => [...prev, point]);
     } else if (tool === 'add-point' && selectedId) {
       const point = getSvgPoint(e);
-      setPolygons(prev => prev.map(p => {
-        if (p.id !== selectedId) return p;
-        // Find the nearest edge to insert the point
-        let minDist = Infinity;
-        let insertIndex = p.points.length;
-        for (let i = 0; i < p.points.length; i++) {
-          const next = (i + 1) % p.points.length;
-          const dist = distToSegment(point, p.points[i], p.points[next]);
-          if (dist < minDist) {
-            minDist = dist;
-            insertIndex = next;
+      setPolygons(prev => {
+        const updated = prev.map(p => {
+          if (p.id !== selectedId) return p;
+          let minDist = Infinity;
+          let insertIndex = p.points.length;
+          for (let i = 0; i < p.points.length; i++) {
+            const next = (i + 1) % p.points.length;
+            const dist = distToSegment(point, p.points[i], p.points[next]);
+            if (dist < minDist) {
+              minDist = dist;
+              insertIndex = next;
+            }
           }
-        }
-        const newPoints = [...p.points];
-        newPoints.splice(insertIndex, 0, point);
-        return { ...p, points: newPoints };
-      }));
+          const newPoints = [...p.points];
+          newPoints.splice(insertIndex, 0, point);
+          return { ...p, points: newPoints };
+        });
+        syncToBackend(updated);
+        return updated;
+      });
     }
-  }, [tool, selectedId, getSvgPoint]);
+  }, [tool, selectedId, getSvgPoint, syncToBackend]);
 
   const handleDoubleClick = useCallback(() => {
     if (tool === 'draw' && currentPoints.length >= 3) {
@@ -74,26 +143,32 @@ export default function App() {
         strokeWidth: 2,
         opacity: currentOpacity,
       };
-      setPolygons(prev => [...prev, newPolygon]);
+      const updated = [...polygons, newPolygon];
+      setPolygons(updated);
       setSelectedId(newPolygon.id);
       setCurrentPoints([]);
       setTool('select');
+      syncToBackend(updated);
     }
-  }, [tool, currentPoints, currentColor, currentOpacity]);
+  }, [tool, currentPoints, currentColor, currentOpacity, polygons, syncToBackend]);
 
   const handlePointMouseDown = useCallback((e: React.MouseEvent, polygonId: string, pointIndex: number) => {
     e.stopPropagation();
     if (tool === 'move-point') {
       setDraggingPoint({ polygonId, pointIndex });
     } else if (tool === 'delete-point') {
-      setPolygons(prev => prev.map(p => {
-        if (p.id !== polygonId) return p;
-        if (p.points.length <= 3) return p; // Min 3 points
-        const newPoints = p.points.filter((_, i) => i !== pointIndex);
-        return { ...p, points: newPoints };
-      }));
+      setPolygons(prev => {
+        const updated = prev.map(p => {
+          if (p.id !== polygonId) return p;
+          if (p.points.length <= 3) return p;
+          const newPoints = p.points.filter((_, i) => i !== pointIndex);
+          return { ...p, points: newPoints };
+        });
+        syncToBackend(updated);
+        return updated;
+      });
     }
-  }, [tool]);
+  }, [tool, syncToBackend]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (draggingPoint) {
@@ -108,8 +183,15 @@ export default function App() {
   }, [draggingPoint, getSvgPoint]);
 
   const handleMouseUp = useCallback(() => {
+    if (draggingPoint) {
+      // Синхронизируем после завершения перетаскивания
+      setPolygons(current => {
+        syncToBackend(current);
+        return current;
+      });
+    }
     setDraggingPoint(null);
-  }, []);
+  }, [draggingPoint, syncToBackend]);
 
   const handlePolygonClick = useCallback((e: React.MouseEvent, polygonId: string) => {
     e.stopPropagation();
@@ -126,8 +208,13 @@ export default function App() {
 
   const deletePolygon = () => {
     if (selectedId) {
-      setPolygons(prev => prev.filter(p => p.id !== selectedId));
+      const updated = polygons.filter(p => p.id !== selectedId);
+      setPolygons(updated);
       setSelectedId(null);
+      syncToBackend(updated);
+      if (apiAvailable) {
+        api.deletePolygon(selectedId).catch(() => {});
+      }
     }
   };
 
@@ -141,10 +228,12 @@ export default function App() {
         strokeWidth: 2,
         opacity: currentOpacity,
       };
-      setPolygons(prev => [...prev, newPolygon]);
+      const updated = [...polygons, newPolygon];
+      setPolygons(updated);
       setSelectedId(newPolygon.id);
       setCurrentPoints([]);
       setTool('select');
+      syncToBackend(updated);
     }
   };
 
@@ -154,23 +243,31 @@ export default function App() {
   };
 
   const updatePolygonColor = (color: string) => {
-    if (selectedId) {
-      setPolygons(prev => prev.map(p => {
-        if (p.id !== selectedId) return p;
-        return { ...p, fill: color, stroke: darkenColor(color, 30) };
-      }));
-    }
     setCurrentColor(color);
+    if (selectedId) {
+      setPolygons(prev => {
+        const updated = prev.map(p => {
+          if (p.id !== selectedId) return p;
+          return { ...p, fill: color, stroke: darkenColor(color, 30) };
+        });
+        syncToBackend(updated);
+        return updated;
+      });
+    }
   };
 
   const updatePolygonOpacity = (opacity: number) => {
-    if (selectedId) {
-      setPolygons(prev => prev.map(p => {
-        if (p.id !== selectedId) return p;
-        return { ...p, opacity };
-      }));
-    }
     setCurrentOpacity(opacity);
+    if (selectedId) {
+      setPolygons(prev => {
+        const updated = prev.map(p => {
+          if (p.id !== selectedId) return p;
+          return { ...p, opacity };
+        });
+        syncToBackend(updated);
+        return updated;
+      });
+    }
   };
 
   const bringToFront = () => {
@@ -180,7 +277,9 @@ export default function App() {
         if (idx === -1) return prev;
         const polygon = prev[idx];
         const rest = prev.filter((_, i) => i !== idx);
-        return [...rest, polygon];
+        const updated = [...rest, polygon];
+        syncToBackend(updated);
+        return updated;
       });
     }
   };
@@ -192,7 +291,9 @@ export default function App() {
         if (idx === -1) return prev;
         const polygon = prev[idx];
         const rest = prev.filter((_, i) => i !== idx);
-        return [polygon, ...rest];
+        const updated = [polygon, ...rest];
+        syncToBackend(updated);
+        return updated;
       });
     }
   };
@@ -202,23 +303,20 @@ export default function App() {
     setSelectedId(null);
     setCurrentPoints([]);
     setTool('select');
+    if (apiAvailable) {
+      api.deleteAllPolygons().catch(() => {});
+    }
   };
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (tool === 'draw') {
-          cancelDrawing();
-        }
+        if (tool === 'draw') cancelDrawing();
         setSelectedId(null);
       }
-      if (e.key === 'Enter' && tool === 'draw') {
-        finishDrawing();
-      }
-      if (e.key === 'Delete' && selectedId && tool !== 'draw') {
-        deletePolygon();
-      }
+      if (e.key === 'Enter' && tool === 'draw') finishDrawing();
+      if (e.key === 'Delete' && selectedId && tool !== 'draw') deletePolygon();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -243,6 +341,41 @@ export default function App() {
           onPointMouseDown={handlePointMouseDown}
           onPolygonClick={handlePolygonClick}
         />
+
+        {/* Таблица фигур (левый верхний угол) */}
+        {showTable && polygons.length > 0 && (
+          <PolygonTable
+            polygons={polygons}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onClose={() => setShowTable(false)}
+          />
+        )}
+
+        {/* Кнопка показа таблицы */}
+        {!showTable && polygons.length > 0 && (
+          <button
+            onClick={() => setShowTable(true)}
+            className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium text-gray-700 hover:bg-white shadow-sm transition-colors"
+          >
+            📊 Показать таблицу фигур
+          </button>
+        )}
+
+        {/* Индикатор сохранения */}
+        {saving && (
+          <div className="absolute top-3 right-3 bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2">
+            <span className="animate-spin">⏳</span> Сохранение...
+          </div>
+        )}
+
+        {/* Статус API */}
+        {!apiAvailable && (
+          <div className="absolute bottom-12 left-3 bg-yellow-100 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-xs">
+            ⚠️ API недоступен — работа в оффлайн-режиме
+          </div>
+        )}
+
         {/* Status bar */}
         <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-t border-gray-200 px-4 py-2 text-sm text-gray-600 flex items-center gap-4">
           <span>Режим: <strong>{getToolLabel(tool)}</strong></span>
@@ -275,18 +408,18 @@ export default function App() {
           currentOpacity={selectedPolygon?.opacity ?? currentOpacity}
           onColorClick={() => setShowColorPicker(!showColorPicker)}
           onOpacityChange={updatePolygonOpacity}
+          showColorPicker={showColorPicker}
+          updatePolygonColor={updatePolygonColor}
+          onShowStats={() => setShowStats(true)}
+          onToggleTable={() => setShowTable(!showTable)}
+          showTable={showTable}
         />
-
-        {/* Color Picker Panel */}
-        {showColorPicker && (
-          <ColorPicker
-            color={selectedPolygon?.fill || currentColor}
-            onColorChange={updatePolygonColor}
-            presets={DEFAULT_COLORS}
-            onClose={() => setShowColorPicker(false)}
-          />
-        )}
       </div>
+
+      {/* Модальное окно статистики */}
+      {showStats && (
+        <StatsModal onClose={() => setShowStats(false)} />
+      )}
     </div>
   );
 }

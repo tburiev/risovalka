@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -212,6 +212,31 @@ def delete_all(db: Session = Depends(get_db)):
     """Удалить все многоугольники"""
     count = crud.delete_all_polygons(db)
     return schemas.MessageResponse(message=f"Deleted {count} polygons")
+
+
+# ============ Visitor Stats ============
+
+@app.post("/api/visitors/track", response_model=schemas.VisitorResponse)
+def track_visit(request: Request, db: Session = Depends(get_db)):
+    """Фиксирует визит пользователя"""
+    ip = crud.get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+    visitor = crud.track_visitor(db, ip, user_agent)
+    return visitor
+
+
+@app.get("/api/visitors", response_model=schemas.VisitorListResponse)
+def get_visitors(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """Получает список всех посетителей"""
+    visitors = crud.get_visitors(db, skip=skip, limit=limit)
+    return schemas.VisitorListResponse(
+        visitors=visitors,
+        total=len(visitors)
+    )
 
 
 # ============ Health Check & Debug ============

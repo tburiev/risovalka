@@ -1,6 +1,12 @@
 import React from 'react';
 import { Tool, Polygon, Point } from '../types';
 
+const DEFAULT_COLORS = [
+  '#FF0000', '#FF4500', '#FF8C00', '#FFD700', '#FFFF00', '#ADFF2F',
+  '#00FF00', '#00CED1', '#0000FF', '#4B0082', '#8B00FF', '#FF00FF',
+  '#FF69B4', '#FFFFFF', '#808080', '#000000', '#8B4513', '#006400',
+];
+
 interface ToolbarProps {
   tool: Tool;
   setTool: (tool: Tool) => void;
@@ -18,6 +24,11 @@ interface ToolbarProps {
   currentOpacity: number;
   onColorClick: () => void;
   onOpacityChange: (opacity: number) => void;
+  showColorPicker: boolean;
+  updatePolygonColor: (color: string) => void;
+  onShowStats: () => void;
+  onToggleTable: () => void;
+  showTable: boolean;
 }
 
 export default function Toolbar({
@@ -37,6 +48,11 @@ export default function Toolbar({
   currentOpacity,
   onColorClick,
   onOpacityChange,
+  showColorPicker,
+  updatePolygonColor,
+  onShowStats,
+  onToggleTable,
+  showTable,
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-1 p-4">
@@ -139,6 +155,42 @@ export default function Toolbar({
           <span className="text-gray-700">Выбрать цвет</span>
           <span className="ml-auto text-xs text-gray-400 font-mono">{currentColor}</span>
         </button>
+        
+        {/* Inline Color Picker */}
+        {showColorPicker && (
+          <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="grid grid-cols-6 gap-1.5 mb-3">
+              {DEFAULT_COLORS.map((color, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    updatePolygonColor(color);
+                  }}
+                  className={`w-8 h-8 rounded border-2 transition-transform hover:scale-110 ${
+                    currentColor === color ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">HEX:</span>
+              <input
+                type="text"
+                value={currentColor.replace('#', '')}
+                onChange={(e) => {
+                  const val = e.target.value.replace('#', '');
+                  if (/^[0-9a-fA-F]{0,6}$/.test(val)) {
+                    updatePolygonColor(`#${val}`);
+                  }
+                }}
+                className="flex-1 px-2 py-1 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:border-blue-400 uppercase"
+                maxLength={6}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Opacity section */}
@@ -204,6 +256,25 @@ export default function Toolbar({
           </div>
         </div>
       )}
+
+      {/* Stats and Table buttons */}
+      <div className="mb-3">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Аналитика</h2>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onToggleTable}
+            className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+          >
+            {showTable ? '📊 Скрыть таблицу' : '📊 Таблица'}
+          </button>
+          <button
+            onClick={onShowStats}
+            className="flex-1 px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium hover:bg-purple-200 transition-colors"
+          >
+            📈 Статистика
+          </button>
+        </div>
+      </div>
 
       {/* Clear all */}
       <div className="mt-auto pt-3">

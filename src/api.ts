@@ -123,11 +123,39 @@ export async function sendToBack(polygonId: string): Promise<void> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch('https://risovalka-7pnh.onrender.com');
+    const res = await fetch(`${API_BASE.replace('/api', '')}/health`);
     return res.ok;
   } catch {
     return false;
   }
+}
+
+// ============ Visitor Tracking ============
+
+export async function trackVisit(): Promise<void> {
+  const res = await fetch(`${API_BASE}/visitors/track`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Failed to track visit');
+}
+
+export interface Visitor {
+  id: number;
+  ip_address: string;
+  user_agent: string;
+  browser: string;
+  country: string | null;
+  city: string | null;
+  last_visit: string;
+  visit_count: number;
+}
+
+export async function fetchVisitors(): Promise<Visitor[]> {
+  const res = await fetch(`${API_BASE}/visitors`);
+  if (!res.ok) throw new Error('Failed to fetch visitors');
+  const data = await res.json();
+  return data.visitors;
 }
 
 // ============ Helpers ============
