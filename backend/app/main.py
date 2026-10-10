@@ -20,6 +20,9 @@ try:
     from app.database import get_db, init_db
     logger.info("Database module imported successfully")
     
+    from app import models  # Важно: модели должны быть импортированы
+    logger.info("Models imported successfully")
+    
     from app import crud, schemas
     logger.info("CRUD and schemas imported successfully")
 except Exception as e:
