@@ -1,14 +1,22 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.config import get_settings
+import logging
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-engine = create_engine(settings.database_url)
+# Поддержка обоих форматов URL (postgresql:// и postgresql+psycopg2://)
+DATABASE_URL = settings.database_url
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 def get_db():
@@ -21,5 +29,9 @@ def get_db():
 
 
 def init_db():
-    """Создание таблиц в БД"""
-    Base.metadata.create_all(bind=engine)
+    """Создание таблиц в БД (безопасно, не перезаписывает существующие)"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified successfully")
+    except Exception as e:
+        logger.warning(f"Could not create tables (they may already exist): {e}")
