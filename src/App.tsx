@@ -68,35 +68,47 @@ export default function App() {
 
   // Сохранение в БД
   const syncToBackend = useCallback(async (updatedPolygons: Polygon[]) => {
-    if (!apiAvailable) return;
+    if (!apiAvailable) {
+      console.warn('API not available, skipping sync');
+      return;
+    }
     setSaving(true);
     try {
+      console.log('Syncing polygons to backend...', updatedPolygons.length, 'polygons');
+      
       // Простая стратегия: синхронизируем все фигуры
       const existing = await api.fetchPolygons();
+      console.log('Existing polygons in DB:', existing.length);
+      
       const existingIds = new Set(existing.map(p => p.id));
       const newIds = new Set(updatedPolygons.map(p => p.id));
 
       // Удаляем фигуры, которых больше нет
       for (const p of existing) {
         if (!newIds.has(p.id)) {
-          await api.deletePolygon(p.id).catch(() => {});
+          console.log('Deleting polygon:', p.id);
+          await api.deletePolygon(p.id).catch(err => console.error('Delete error:', err));
         }
       }
 
       // Создаём или обновляем
       for (const p of updatedPolygons) {
         if (existingIds.has(p.id)) {
+          console.log('Updating polygon:', p.id);
           await api.updatePolygon(p.id, {
             fill: p.fill,
             stroke: p.stroke,
             strokeWidth: p.strokeWidth,
             opacity: p.opacity,
-          }).catch(() => {});
-          await api.replacePoints(p.id, p.points).catch(() => {});
+          }).catch(err => console.error('Update error:', err));
+          await api.replacePoints(p.id, p.points).catch(err => console.error('Replace points error:', err));
         } else {
-          await api.createPolygon(p).catch(() => {});
+          console.log('Creating polygon:', p.id);
+          await api.createPolygon(p).catch(err => console.error('Create error:', err));
         }
       }
+      
+      console.log('Sync completed successfully');
     } catch (err) {
       console.error('Sync error:', err);
     } finally {
