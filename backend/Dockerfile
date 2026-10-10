@@ -2,12 +2,6 @@ FROM python:3.11.9-slim
 
 WORKDIR /app
 
-# Системные зависимости для psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Обновляем pip и устанавливаем зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
