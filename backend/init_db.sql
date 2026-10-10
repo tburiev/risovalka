@@ -44,22 +44,21 @@ CREATE INDEX idx_points_order ON points(polygon_id, order_index);
 
 -- ============================================
 -- Таблица посетителей (статистика)
+-- Каждый вход сохраняется как отдельная запись
 -- ============================================
 CREATE TABLE visitors (
     id SERIAL PRIMARY KEY,
-    ip_address VARCHAR(45) NOT NULL UNIQUE,
+    ip_address VARCHAR(45) NOT NULL,
     user_agent TEXT,
     browser VARCHAR(50),
     country VARCHAR(100),
     city VARCHAR(100),
-    visit_count INTEGER NOT NULL DEFAULT 1,
-    first_visit TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    last_visit TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    visit_time TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Индексы для visitors
 CREATE INDEX idx_visitors_ip ON visitors(ip_address);
-CREATE INDEX idx_visitors_last_visit ON visitors(last_visit DESC);
+CREATE INDEX idx_visitors_visit_time ON visitors(visit_time DESC);
 
 -- ============================================
 -- Функция автоматического обновления updated_at

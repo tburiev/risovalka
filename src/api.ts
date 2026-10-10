@@ -180,8 +180,7 @@ export interface Visitor {
   browser: string;
   country: string | null;
   city: string | null;
-  last_visit: string;
-  visit_count: number;
+  visit_time: string;
 }
 
 export async function fetchVisitors(): Promise<Visitor[]> {

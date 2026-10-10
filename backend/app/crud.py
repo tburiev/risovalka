@@ -243,33 +243,21 @@ def get_geo_info(ip: str) -> dict:
 
 
 def track_visitor(db: Session, ip: str, user_agent: str) -> models.Visitor:
-    """Фиксирует или обновляет визит"""
-    visitor = db.query(models.Visitor).filter(models.Visitor.ip_address == ip).first()
-    
-    if visitor:
-        # Обновляем существующего
-        visitor.user_agent = user_agent
-        visitor.browser = parse_browser(user_agent)
-        visitor.visit_count += 1
-        visitor.last_visit = func.now()
-    else:
-        # Создаём нового
-        geo = get_geo_info(ip)
-        visitor = models.Visitor(
-            ip_address=ip,
-            user_agent=user_agent,
-            browser=parse_browser(user_agent),
-            country=geo.get("country"),
-            city=geo.get("city"),
-            visit_count=1,
-        )
-        db.add(visitor)
-    
+    """Фиксирует каждый визит как отдельную запись"""
+    geo = get_geo_info(ip)
+    visitor = models.Visitor(
+        ip_address=ip,
+        user_agent=user_agent,
+        browser=parse_browser(user_agent),
+        country=geo.get("country"),
+        city=geo.get("city"),
+    )
+    db.add(visitor)
     db.commit()
     db.refresh(visitor)
     return visitor
 
 
-def get_visitors(db: Session, skip: int = 0, limit: int = 100) -> list:
-    """Получает список всех посетителей"""
-    return db.query(models.Visitor).order_by(models.Visitor.last_visit.desc()).offset(skip).limit(limit).all()
+def get_visitors(db: Session, skip: int = 0, limit: int = 1000) -> list:
+    """Получает список всех визитов"""
+    return db.query(models.Visitor).order_by(models.Visitor.visit_time.desc()).offset(skip).limit(limit).all()

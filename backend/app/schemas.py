@@ -70,9 +70,7 @@ class VisitorResponse(BaseModel):
     browser: Optional[str] = None
     country: Optional[str] = None
     city: Optional[str] = None
-    visit_count: int
-    first_visit: datetime
-    last_visit: datetime
+    visit_time: datetime
 
     class Config:
         from_attributes = True
