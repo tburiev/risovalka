@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -63,56 +62,22 @@ app = FastAPI(
 
 logger.info("Adding CORS middleware...")
 
-# Кастомный CORS middleware для гарантированной работы
+# Простой CORS middleware - разрешаем ВСЕ домены
 @app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get("origin", "")
-    
-    # Разрешённые домены
-    allowed_origins = [
-        "https://risovalka-1.onrender.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8000",
-    ]
-    
-    if origin in allowed_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+async def cors_middleware(request: Request, call_next):
+    # Обрабатываем preflight OPTIONS запросы
+    if request.method == "OPTIONS":
+        response = JSONResponse(content={})
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
     
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
     return response
-
-# Стандартный CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://risovalka-1.onrender.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,
-)
-
-# Обработка preflight OPTIONS запросов
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "https://risovalka-1.onrender.com",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    )
 
 logger.info("FastAPI app created successfully")
 

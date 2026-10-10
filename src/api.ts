@@ -20,7 +20,6 @@ const API_URL = (() => {
 })();
 
 const API_BASE = API_URL;
-const API_BASE = 'https://risovalka-7pnh.onrender.com/api';
 
 // ============ Polygon API ============
 
