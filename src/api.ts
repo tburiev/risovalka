@@ -1,6 +1,6 @@
 import { Polygon, Point } from './types';
 
-const API_BASE = 'https://risovalka-7pnh.onrender.com';
+const API_BASE = 'https://risovalka-7pnh.onrender.com/api';
 
 // ============ Polygon API ============
 
