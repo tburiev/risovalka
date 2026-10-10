@@ -32,9 +32,9 @@ function calculatePerimeter(points: { x: number; y: number }[]): number {
 
 export default function PolygonTable({ polygons, selectedId, onSelect, onClose }: PolygonTableProps) {
   return (
-    <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg max-w-md max-h-80 overflow-hidden">
+    <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg max-w-[calc(100vw-6rem)] md:max-w-md max-h-80 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-700">📊 Информация о фигурах</h3>
+        <h3 className="text-sm font-semibold text-gray-700">📊 Фигуры</h3>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600 text-lg leading-none"
@@ -48,8 +48,8 @@ export default function PolygonTable({ polygons, selectedId, onSelect, onClose }
             <tr>
               <th className="px-2 py-1.5 text-left text-gray-500 font-medium">#</th>
               <th className="px-2 py-1.5 text-left text-gray-500 font-medium">Цвет</th>
-              <th className="px-2 py-1.5 text-right text-gray-500 font-medium">Площадь</th>
-              <th className="px-2 py-1.5 text-right text-gray-500 font-medium">Периметр</th>
+              <th className="px-2 py-1.5 text-right text-gray-500 font-medium hidden sm:table-cell">Площадь</th>
+              <th className="px-2 py-1.5 text-right text-gray-500 font-medium hidden sm:table-cell">Периметр</th>
               <th className="px-2 py-1.5 text-right text-gray-500 font-medium">Точек</th>
             </tr>
           </thead>
@@ -70,14 +70,14 @@ export default function PolygonTable({ polygons, selectedId, onSelect, onClose }
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <div
-                        className="w-4 h-4 rounded border border-gray-300"
+                        className="w-4 h-4 rounded border border-gray-300 flex-shrink-0"
                         style={{ backgroundColor: polygon.fill }}
                       />
-                      <span className="text-gray-500 font-mono">{polygon.fill}</span>
+                      <span className="text-gray-500 font-mono text-[10px] hidden sm:inline">{polygon.fill}</span>
                     </div>
                   </td>
-                  <td className="px-2 py-1.5 text-right text-gray-700 font-mono">{area.toFixed(0)}</td>
-                  <td className="px-2 py-1.5 text-right text-gray-700 font-mono">{perimeter.toFixed(0)}</td>
+                  <td className="px-2 py-1.5 text-right text-gray-700 font-mono hidden sm:table-cell">{area.toFixed(0)}</td>
+                  <td className="px-2 py-1.5 text-right text-gray-700 font-mono hidden sm:table-cell">{perimeter.toFixed(0)}</td>
                   <td className="px-2 py-1.5 text-right text-gray-700">{polygon.points.length}</td>
                 </tr>
               );
