@@ -123,7 +123,7 @@ export async function sendToBack(polygonId: string): Promise<void> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch('http://localhost:8000/health');
+    const res = await fetch('https://risovalka-7pnh.onrender.com');
     return res.ok;
   } catch {
     return false;
