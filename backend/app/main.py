@@ -4,23 +4,51 @@ from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
+import sys
 
-from app.database import get_db, init_db
-from app import crud, schemas
-
-logging.basicConfig(level=logging.INFO)
+# Настраиваем логирование
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
+
+logger.info("Importing modules...")
+
+try:
+    from app.database import get_db, init_db
+    logger.info("Database module imported successfully")
+    
+    from app import crud, schemas
+    logger.info("CRUD and schemas imported successfully")
+except Exception as e:
+    logger.error(f"Failed to import modules: {e}", exc_info=True)
+    raise
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    logger.info("=" * 50)
     logger.info("Starting up application...")
-    init_db()
+    logger.info("=" * 50)
+    
+    try:
+        init_db()
+        logger.info("Database initialization completed")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        raise
+    
+    logger.info("Application startup complete!")
     yield
+    
     # Shutdown
     logger.info("Shutting down application...")
 
+
+logger.info("Creating FastAPI app...")
 
 app = FastAPI(
     title="Polygon Editor API",
@@ -28,6 +56,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+logger.info("Adding CORS middleware...")
 
 # CORS для фронтенда
 app.add_middleware(
@@ -37,6 +67,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger.info("FastAPI app created successfully")
 
 
 # ============ Polygon Endpoints ============
@@ -179,8 +211,45 @@ def delete_all(db: Session = Depends(get_db)):
     return schemas.MessageResponse(message=f"Deleted {count} polygons")
 
 
-# ============ Health Check ============
+# ============ Health Check & Debug ============
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "polygon-editor-api"}
+
+
+@app.get("/debug")
+def debug_info():
+    """Диагностический endpoint для отладки проблем с деплоем"""
+    import sys
+    import os
+    from sqlalchemy import inspect
+    
+    result = {
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "env_vars": {
+            "DATABASE_URL": "SET" if os.getenv("DATABASE_URL") else "NOT SET",
+            "PYTHON_VERSION": os.getenv("PYTHON_VERSION", "NOT SET"),
+            "PORT": os.getenv("PORT", "NOT SET"),
+            "WEB_CONCURRENCY": os.getenv("WEB_CONCURRENCY", "NOT SET"),
+        },
+        "database": {},
+    }
+    
+    try:
+        from app.database import engine, settings
+        result["database"]["url_preview"] = settings.database_url[:60] + "..."
+        
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            result["database"]["status"] = "connected"
+            result["database"]["tables"] = tables
+            result["database"]["has_polygons"] = "polygons" in tables
+            result["database"]["has_points"] = "points" in tables
+    except Exception as e:
+        result["database"]["status"] = "error"
+        result["database"]["error"] = str(e)
+    
+    return result

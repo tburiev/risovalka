@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.config import get_settings
 import logging
@@ -11,7 +11,8 @@ DATABASE_URL = settings.database_url
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+logger.info(f"Connecting to database...")
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -29,9 +30,21 @@ def get_db():
 
 
 def init_db():
-    """Создание таблиц в БД (безопасно, не перезаписывает существующие)"""
+    """Проверка подключения к БД (таблицы уже созданы в Supabase)"""
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created/verified successfully")
+        # Проверяем подключение
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            logger.info(f"Connected to database. Tables: {tables}")
+            
+            # Проверяем наличие нужных таблиц
+            required_tables = ['polygons', 'points']
+            missing = [t for t in required_tables if t not in tables]
+            if missing:
+                logger.warning(f"Missing tables: {missing}. Please run init_db.sql in Supabase.")
+            else:
+                logger.info("All required tables exist.")
     except Exception as e:
-        logger.warning(f"Could not create tables (they may already exist): {e}")
+        logger.error(f"Database connection failed: {e}")
+        raise
