@@ -38,3 +38,17 @@ class Point(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     polygon = relationship("Polygon", back_populates="points")
+
+
+class Visitor(Base):
+    __tablename__ = "visitors"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    ip_address = Column(String, nullable=False, unique=True, index=True)
+    user_agent = Column(String, nullable=True)
+    browser = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    visit_count = Column(Integer, nullable=False, default=1)
+    first_visit = Column(DateTime(timezone=True), server_default=func.now())
+    last_visit = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

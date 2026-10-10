@@ -132,7 +132,7 @@ def init_db():
             tables = inspector.get_table_names()
             logger.info(f"✓ Connected to database. Tables: {tables}")
             
-            required_tables = ['polygons', 'points']
+            required_tables = ['polygons', 'points', 'visitors']
             missing = [t for t in required_tables if t not in tables]
             if missing:
                 logger.warning(f"⚠ Missing tables: {missing}. Please run init_db.sql in Supabase.")

@@ -61,3 +61,23 @@ class PolygonListResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     id: Optional[str] = None
+
+
+class VisitorResponse(BaseModel):
+    id: int
+    ip_address: str
+    user_agent: Optional[str] = None
+    browser: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    visit_count: int
+    first_visit: datetime
+    last_visit: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VisitorListResponse(BaseModel):
+    visitors: List[VisitorResponse]
+    total: int

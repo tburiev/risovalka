@@ -194,3 +194,82 @@ def delete_all_polygons(db: Session) -> int:
     db.query(models.Polygon).delete()
     db.commit()
     return count
+
+
+# Visitor CRUD
+def get_client_ip(request) -> str:
+    """Извлекает реальный IP клиента"""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def parse_browser(user_agent: str) -> str:
+    """Определяет браузер по User-Agent"""
+    if not user_agent:
+        return "Unknown"
+    ua = user_agent.lower()
+    if "firefox" in ua:
+        return "Firefox"
+    if "edg" in ua:
+        return "Edge"
+    if "opr" in ua or "opera" in ua:
+        return "Opera"
+    if "chrome" in ua:
+        return "Chrome"
+    if "safari" in ua:
+        return "Safari"
+    return "Other"
+
+
+def get_geo_info(ip: str) -> dict:
+    """Получает геолокацию по IP (бесплатный API)"""
+    try:
+        import urllib.request
+        import json
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,city"
+        req = urllib.request.Request(url, headers={"User-Agent": "PolygonEditor/1.0"})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            data = json.loads(response.read().decode())
+            if data.get("status") == "success":
+                return {
+                    "country": data.get("country"),
+                    "city": data.get("city"),
+                }
+    except Exception:
+        pass
+    return {"country": None, "city": None}
+
+
+def track_visitor(db: Session, ip: str, user_agent: str) -> models.Visitor:
+    """Фиксирует или обновляет визит"""
+    visitor = db.query(models.Visitor).filter(models.Visitor.ip_address == ip).first()
+    
+    if visitor:
+        # Обновляем существующего
+        visitor.user_agent = user_agent
+        visitor.browser = parse_browser(user_agent)
+        visitor.visit_count += 1
+        visitor.last_visit = func.now()
+    else:
+        # Создаём нового
+        geo = get_geo_info(ip)
+        visitor = models.Visitor(
+            ip_address=ip,
+            user_agent=user_agent,
+            browser=parse_browser(user_agent),
+            country=geo.get("country"),
+            city=geo.get("city"),
+            visit_count=1,
+        )
+        db.add(visitor)
+    
+    db.commit()
+    db.refresh(visitor)
+    return visitor
+
+
+def get_visitors(db: Session, skip: int = 0, limit: int = 100) -> list:
+    """Получает список всех посетителей"""
+    return db.query(models.Visitor).order_by(models.Visitor.last_visit.desc()).offset(skip).limit(limit).all()
