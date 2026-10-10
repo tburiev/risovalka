@@ -4,19 +4,12 @@ import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import PolygonTable from './components/PolygonTable';
 import StatsModal from './components/StatsModal';
+import ZoomControls from './components/ZoomControls';
 import * as api from './api';
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 11);
 }
-
-const DEFAULT_COLORS = [
-  '#FF0000', '#FF4500', '#FF8C00', '#FFD700', '#FFFF00', '#ADFF2F',
-  '#00FF00', '#00CED1', '#0000FF', '#4B0082', '#8B00FF', '#FF00FF',
-  '#FF69B4', '#FFFFFF', '#808080', '#000000', '#8B4513', '#006400',
-];
 
 export default function App() {
   const [polygons, setPolygons] = useState<Polygon[]>([]);
@@ -28,19 +21,28 @@ export default function App() {
   const [showColorPicker, setShowColorPicker] = useState<boolean>(false);
   const [showStats, setShowStats] = useState<boolean>(false);
   const [showTable, setShowTable] = useState<boolean>(true);
+  const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [draggingPoint, setDraggingPoint] = useState<{ polygonId: string; pointIndex: number } | null>(null);
   const [apiAvailable, setApiAvailable] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  
+  // Pan & Zoom state
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0, vx: 0, vy: 0 });
+  const [zoom, setZoom] = useState(1);
+  
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedPolygon = polygons.find(p => p.id === selectedId) || null;
 
-  // Проверка доступности API
+  // Check API availability
   useEffect(() => {
     api.checkHealth().then(setApiAvailable);
   }, []);
 
-  // Загрузка фигур из БД при старте
+  // Load polygons from DB
   useEffect(() => {
     if (apiAvailable) {
       api.fetchPolygons()
@@ -49,66 +51,81 @@ export default function App() {
     }
   }, [apiAvailable]);
 
-  // Фиксация визита
+  // Track visit
   useEffect(() => {
     if (apiAvailable) {
       api.trackVisit().catch(err => console.error('Failed to track visit:', err));
     }
   }, [apiAvailable]);
 
-  const getSvgPoint = useCallback((e: React.MouseEvent): Point => {
+  // Close sidebar on desktop, open on mobile initial
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setShowSidebar(true);
+      } else {
+        setShowSidebar(false);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const getSvgPoint = useCallback((e: React.MouseEvent | React.TouchEvent): Point => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-  }, []);
-
-  // Сохранение в БД
-  const syncToBackend = useCallback(async (updatedPolygons: Polygon[]) => {
-    if (!apiAvailable) {
-      console.warn('API not available, skipping sync');
-      return;
+    
+    let clientX: number, clientY: number;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return { x: 0, y: 0 };
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
     }
+    
+    // Convert screen coordinates to SVG coordinates
+    const scaleX = viewBox.w / rect.width;
+    const scaleY = viewBox.h / rect.height;
+    const scale = Math.max(scaleX, scaleY);
+    
+    return {
+      x: viewBox.x + (clientX - rect.left) * scale,
+      y: viewBox.y + (clientY - rect.top) * scale,
+    };
+  }, [viewBox]);
+
+  // Sync to backend
+  const syncToBackend = useCallback(async (updatedPolygons: Polygon[]) => {
+    if (!apiAvailable) return;
     setSaving(true);
     try {
-      console.log('Syncing polygons to backend...', updatedPolygons.length, 'polygons');
-      
-      // Простая стратегия: синхронизируем все фигуры
       const existing = await api.fetchPolygons();
-      console.log('Existing polygons in DB:', existing.length);
-      
       const existingIds = new Set(existing.map(p => p.id));
       const newIds = new Set(updatedPolygons.map(p => p.id));
 
-      // Удаляем фигуры, которых больше нет
       for (const p of existing) {
         if (!newIds.has(p.id)) {
-          console.log('Deleting polygon:', p.id);
-          await api.deletePolygon(p.id).catch(err => console.error('Delete error:', err));
+          await api.deletePolygon(p.id).catch(() => {});
         }
       }
 
-      // Создаём или обновляем
       for (const p of updatedPolygons) {
         if (existingIds.has(p.id)) {
-          console.log('Updating polygon:', p.id);
           await api.updatePolygon(p.id, {
             fill: p.fill,
             stroke: p.stroke,
             strokeWidth: p.strokeWidth,
             opacity: p.opacity,
-          }).catch(err => console.error('Update error:', err));
-          await api.replacePoints(p.id, p.points).catch(err => console.error('Replace points error:', err));
+          }).catch(() => {});
+          await api.replacePoints(p.id, p.points).catch(() => {});
         } else {
-          console.log('Creating polygon:', p.id);
-          await api.createPolygon(p).catch(err => console.error('Create error:', err));
+          await api.createPolygon(p).catch(() => {});
         }
       }
-      
-      console.log('Sync completed successfully');
     } catch (err) {
       console.error('Sync error:', err);
     } finally {
@@ -196,7 +213,6 @@ export default function App() {
 
   const handleMouseUp = useCallback(() => {
     if (draggingPoint) {
-      // Синхронизируем после завершения перетаскивания
       setPolygons(current => {
         syncToBackend(current);
         return current;
@@ -211,6 +227,111 @@ export default function App() {
       setSelectedId(polygonId);
     }
   }, [tool]);
+
+  // Pan handlers
+  const handlePanStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    let clientX: number, clientY: number;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    setIsPanning(true);
+    setPanStart({ x: clientX, y: clientY, vx: viewBox.x, vy: viewBox.y });
+  }, [viewBox]);
+
+  const handlePanMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isPanning) return;
+    
+    let clientX: number, clientY: number;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    
+    const dx = (clientX - panStart.x) * (viewBox.w / rect.width);
+    const dy = (clientY - panStart.y) * (viewBox.h / rect.height);
+    
+    setViewBox(prev => ({
+      ...prev,
+      x: panStart.vx - dx,
+      y: panStart.vy - dy,
+    }));
+  }, [isPanning, panStart, viewBox.w, viewBox.h]);
+
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  // Zoom handlers
+  const handleZoom = useCallback((delta: number) => {
+    const factor = delta > 0 ? 1.1 : 0.9;
+    const newZoom = Math.max(0.1, Math.min(10, zoom * factor));
+    
+    const centerX = viewBox.x + viewBox.w / 2;
+    const centerY = viewBox.y + viewBox.h / 2;
+    
+    const newW = 1200 / newZoom;
+    const newH = 800 / newZoom;
+    
+    setViewBox({
+      x: centerX - newW / 2,
+      y: centerY - newH / 2,
+      w: newW,
+      h: newH,
+    });
+    setZoom(newZoom);
+  }, [zoom, viewBox]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    handleZoom(e.deltaY);
+  }, [handleZoom]);
+
+  const resetView = useCallback(() => {
+    setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+    setZoom(1);
+  }, []);
+
+  const fitToContent = useCallback(() => {
+    if (polygons.length === 0) {
+      resetView();
+      return;
+    }
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    polygons.forEach(p => {
+      p.points.forEach(pt => {
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
+      });
+    });
+    
+    const padding = 50;
+    const w = maxX - minX + padding * 2;
+    const h = maxY - minY + padding * 2;
+    
+    setViewBox({
+      x: minX - padding,
+      y: minY - padding,
+      w,
+      h,
+    });
+    setZoom(1200 / w);
+  }, [polygons, resetView]);
 
   const addPolygon = () => {
     setTool('draw');
@@ -335,26 +456,59 @@ export default function App() {
   }, [tool, selectedId, currentPoints, currentColor, currentOpacity]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-gray-100">
+    <div className="flex h-screen w-screen overflow-hidden bg-gray-100 relative">
       {/* Canvas area */}
-      <div className="flex-1 relative">
-        <Canvas
-          svgRef={svgRef}
-          polygons={polygons}
-          currentPoints={currentPoints}
-          selectedId={selectedId}
-          tool={tool}
-          currentColor={currentColor}
-          currentOpacity={currentOpacity}
-          onCanvasClick={handleCanvasClick}
-          onDoubleClick={handleDoubleClick}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onPointMouseDown={handlePointMouseDown}
-          onPolygonClick={handlePolygonClick}
+      <div className="flex-1 relative" ref={containerRef}>
+        <div 
+          className="w-full h-full"
+          onWheel={handleWheel}
+        >
+          <Canvas
+            svgRef={svgRef}
+            polygons={polygons}
+            currentPoints={currentPoints}
+            selectedId={selectedId}
+            tool={tool}
+            currentColor={currentColor}
+            currentOpacity={currentOpacity}
+            onCanvasClick={handleCanvasClick}
+            onDoubleClick={handleDoubleClick}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onPointMouseDown={handlePointMouseDown}
+            onPolygonClick={handlePolygonClick}
+            viewBox={viewBox}
+            isPanning={isPanning}
+            onPanStart={handlePanStart}
+            onPanMove={handlePanMove}
+            onPanEnd={handlePanEnd}
+          />
+        </div>
+
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setShowSidebar(!showSidebar)}
+          className="md:hidden absolute top-3 right-3 z-30 bg-white border border-gray-200 rounded-lg p-2 shadow-lg hover:bg-gray-50 transition-colors"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {showSidebar ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
+
+        {/* Zoom controls */}
+        <ZoomControls
+          zoom={zoom}
+          onZoomIn={() => handleZoom(-1)}
+          onZoomOut={() => handleZoom(1)}
+          onReset={resetView}
+          onFit={fitToContent}
         />
 
-        {/* Таблица фигур (левый верхний угол) */}
+        {/* Polygon table */}
         {showTable && polygons.length > 0 && (
           <PolygonTable
             polygons={polygons}
@@ -364,45 +518,60 @@ export default function App() {
           />
         )}
 
-        {/* Кнопка показа таблицы */}
         {!showTable && polygons.length > 0 && (
           <button
             onClick={() => setShowTable(true)}
             className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium text-gray-700 hover:bg-white shadow-sm transition-colors"
           >
-            📊 Показать таблицу фигур
+            📊 Таблица
           </button>
         )}
 
-        {/* Индикатор сохранения */}
+        {/* Saving indicator */}
         {saving && (
-          <div className="absolute top-3 right-3 bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2">
+          <div className="absolute top-3 right-16 md:right-3 bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg flex items-center gap-2">
             <span className="animate-spin">⏳</span> Сохранение...
           </div>
         )}
 
-        {/* Статус API */}
+        {/* API status */}
         {!apiAvailable && (
           <div className="absolute bottom-12 left-3 bg-yellow-100 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-xs">
-            ⚠️ API недоступен — работа в оффлайн-режиме
+            ⚠️ API недоступен
           </div>
         )}
 
         {/* Status bar */}
         <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-t border-gray-200 px-4 py-2 text-sm text-gray-600 flex items-center gap-4">
-          <span>Режим: <strong>{getToolLabel(tool)}</strong></span>
+          <span className="hidden sm:inline">Режим: <strong>{getToolLabel(tool)}</strong></span>
           {tool === 'draw' && (
-            <span>Точек: <strong>{currentPoints.length}</strong> {currentPoints.length >= 3 && '(Enter — завершить, Esc — отмена)'}</span>
+            <span>Точек: <strong>{currentPoints.length}</strong></span>
           )}
           {selectedPolygon && (
-            <span>Выбран: <strong>#{selectedPolygon.points.length}</strong> (точек)</span>
+            <span>Выбран: <strong>{selectedPolygon.points.length}</strong> т.</span>
           )}
           <span className="ml-auto">Фигур: <strong>{polygons.length}</strong></span>
+          <span className="hidden sm:inline text-gray-400">| Масштаб: <strong>{Math.round(zoom * 100)}%</strong></span>
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="w-72 bg-white border-l border-gray-200 flex flex-col overflow-y-auto shadow-lg">
+      {/* Sidebar overlay for mobile */}
+      {showSidebar && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        fixed md:relative z-50 md:z-auto
+        w-72 bg-white border-l border-gray-200 flex flex-col overflow-y-auto shadow-lg
+        h-full
+        transition-transform duration-300 ease-in-out
+        ${showSidebar ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
+        ${showSidebar ? 'right-0' : 'right-0 md:right-auto'}
+      `}>
         <Toolbar
           tool={tool}
           setTool={setTool}
@@ -425,10 +594,11 @@ export default function App() {
           onShowStats={() => setShowStats(true)}
           onToggleTable={() => setShowTable(!showTable)}
           showTable={showTable}
+          onClose={() => setShowSidebar(false)}
         />
       </div>
 
-      {/* Модальное окно статистики */}
+      {/* Stats modal */}
       {showStats && (
         <StatsModal onClose={() => setShowStats(false)} />
       )}

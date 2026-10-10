@@ -29,6 +29,7 @@ interface ToolbarProps {
   onShowStats: () => void;
   onToggleTable: () => void;
   showTable: boolean;
+  onClose?: () => void;
 }
 
 export default function Toolbar({
@@ -53,13 +54,27 @@ export default function Toolbar({
   onShowStats,
   onToggleTable,
   showTable,
+  onClose,
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-1 p-4">
       {/* Header */}
-      <div className="mb-2">
-        <h1 className="text-lg font-bold text-gray-800">🔷 Редактор многоугольников</h1>
-        <p className="text-xs text-gray-500 mt-1">Создавайте и редактируйте многоугольники</p>
+      <div className="mb-2 flex items-start justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-gray-800">🔷 Редактор</h1>
+          <p className="text-xs text-gray-500 mt-1">Многоугольники</p>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Закрыть"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <hr className="border-gray-200 my-2" />
@@ -290,10 +305,15 @@ export default function Toolbar({
       <div className="mt-3 p-3 bg-blue-50 rounded-lg">
         <p className="text-xs text-blue-700 font-medium mb-1">💡 Подсказки:</p>
         <ul className="text-xs text-blue-600 space-y-0.5">
-          <li>• Кликайте для добавления точек</li>
-          <li>• Двойной клик или Enter — завершить</li>
-          <li>• Esc — отмена рисования</li>
-          <li>• Delete — удалить фигуру</li>
+          <li className="hidden md:block">• Кликайте для добавления точек</li>
+          <li className="hidden md:block">• Двойной клик или Enter — завершить</li>
+          <li className="hidden md:block">• Esc — отмена, Delete — удалить</li>
+          <li className="hidden md:block">• Alt+клик или ПКМ — двигать холст</li>
+          <li className="hidden md:block">• Колёсико мыши — масштаб</li>
+          <li className="md:hidden">• Тап — добавить точку</li>
+          <li className="md:hidden">• Двойной тап — завершить</li>
+          <li className="md:hidden">• Перетаскивание — двигать холст</li>
+          <li className="md:hidden">• Щипок — масштаб</li>
         </ul>
       </div>
     </div>

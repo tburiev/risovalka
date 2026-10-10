@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Polygon, Point, Tool } from '../types';
 
 interface CanvasProps {
@@ -15,6 +15,12 @@ interface CanvasProps {
   onMouseUp: () => void;
   onPointMouseDown: (e: React.MouseEvent, polygonId: string, pointIndex: number) => void;
   onPolygonClick: (e: React.MouseEvent, polygonId: string) => void;
+  // Pan & Zoom
+  viewBox: { x: number; y: number; w: number; h: number };
+  isPanning: boolean;
+  onPanStart: (e: React.MouseEvent | React.TouchEvent) => void;
+  onPanMove: (e: React.MouseEvent | React.TouchEvent) => void;
+  onPanEnd: () => void;
 }
 
 export default function Canvas({
@@ -31,12 +37,18 @@ export default function Canvas({
   onMouseUp,
   onPointMouseDown,
   onPolygonClick,
+  viewBox,
+  isPanning,
+  onPanStart,
+  onPanMove,
+  onPanEnd,
 }: CanvasProps) {
   const getPointsString = (points: Point[]): string => {
     return points.map(p => `${p.x},${p.y}`).join(' ');
   };
 
   const getCursorStyle = (): string => {
+    if (isPanning) return 'grabbing';
     switch (tool) {
       case 'draw': return 'crosshair';
       case 'select': return 'default';
@@ -47,23 +59,96 @@ export default function Canvas({
     }
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Средняя кнопка мыши или Space+клик = pan
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      onPanStart(e);
+      return;
+    }
+    // Правая кнопка = pan
+    if (e.button === 2) {
+      onPanStart(e);
+      return;
+    }
+    onCanvasClick(e);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      onPanMove(e);
+      return;
+    }
+    onMouseMove(e);
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isPanning) {
+      onPanEnd();
+      return;
+    }
+    onMouseUp();
+  };
+
+  // Touch events для мобильных
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Два пальца = pan
+      onPanStart(e);
+    } else if (e.touches.length === 1 && tool === 'select') {
+      // Один палец в режиме выбора = pan
+      onPanStart(e);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isPanning || e.touches.length === 2) {
+      onPanMove(e);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isPanning) {
+      onPanEnd();
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
   return (
     <svg
       ref={svgRef}
       className="w-full h-full bg-white"
-      style={{ cursor: getCursorStyle() }}
-      onClick={onCanvasClick}
+      style={{ cursor: getCursorStyle(), touchAction: 'none' }}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+      preserveAspectRatio="xMidYMid meet"
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
       onDoubleClick={onDoubleClick}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onContextMenu={handleContextMenu}
     >
       {/* Grid pattern */}
       <defs>
         <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
           <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="0.5" />
         </pattern>
+        <pattern id="grid-large" width="100" height="100" patternUnits="userSpaceOnUse">
+          <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#e5e5e5" strokeWidth="1" />
+        </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#grid)" />
+      
+      {/* Background with grid */}
+      <rect x={viewBox.x - 10000} y={viewBox.y - 10000} width={viewBox.w + 20000} height={viewBox.h + 20000} fill="url(#grid)" />
+      <rect x={viewBox.x - 10000} y={viewBox.y - 10000} width={viewBox.w + 20000} height={viewBox.h + 20000} fill="url(#grid-large)" />
+
+      {/* Origin marker */}
+      <line x1="-20" y1="0" x2="20" y2="0" stroke="#d1d5db" strokeWidth="1" />
+      <line x1="0" y1="-20" x2="0" y2="20" stroke="#d1d5db" strokeWidth="1" />
 
       {/* Existing polygons */}
       {polygons.map(polygon => (
@@ -94,7 +179,7 @@ export default function Canvas({
               />
             ))
           )}
-          {/* Vertex labels for selected polygon */}
+          {/* Vertex labels */}
           {polygon.id === selectedId && (tool === 'move-point' || tool === 'delete-point') && (
             polygon.points.map((point, idx) => (
               <text
@@ -148,7 +233,6 @@ export default function Canvas({
               </text>
             </g>
           ))}
-          {/* Preview line from last point to cursor */}
           {currentPoints.length >= 3 && (
             <line
               x1={currentPoints[currentPoints.length - 1].x}
@@ -164,7 +248,7 @@ export default function Canvas({
         </g>
       )}
 
-      {/* Preview polygon fill while drawing */}
+      {/* Preview polygon fill */}
       {currentPoints.length >= 3 && (
         <polygon
           points={getPointsString(currentPoints)}
